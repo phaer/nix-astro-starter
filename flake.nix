@@ -7,6 +7,9 @@
 
   outputs = inputs@{ self, nixpkgs, floco }:
     let
+      packageJson = floco.lib.importJSON ./package.json;
+      inherit (packageJson) name version;
+
       eachSystem = f:
         nixpkgs.lib.genAttrs
           self.lib.supportedSystems
@@ -19,14 +22,40 @@
         "x86_64-darwin"
         "x86_64-linux"
       ];
+      flocoFor = eachSystem ({ self, pkgs, system}: floco.lib.evalModules {
+        modules = [
+          floco.nixosModules.floco
+          ({config, ...}: {
+            config.floco = {
+              settings = {
+                inherit system;
+                nodePackage = self.packages.${system}.nodejs;
+                basedir = ./.;
+              };
+
+              packages.${name}.${version} = {
+                  source = floco.lib.libfloco.cleanLocalSource ./.;
+                };
+              packages.esbuild."0.17.19" = {
+                installed.extraBuildInputs  = [
+                  config.floco.packages."@esbuild/linux-x64"."0.17.19".global
+                ];
+              };
+            };
+          })
+          ./pdefs.nix
+        ];
+      });
 
       packages = eachSystem ({ self, pkgs, system }: let
         nodejs = pkgs.nodejs_20;
         floco = inputs.floco.packages.${system}.floco.override {
           npm = self.packages.${system}.nodejs.pkgs.npm;
         };
+        toplevel = self.flocoFor.${system}.config.floco.packages.${name}.${version};
       in {
-        inherit floco nodejs;
+        inherit floco nodejs toplevel;
+        inherit (toplevel) dist prepared global;
       });
       devShells = eachSystem ({ self, pkgs, system }: {
         default = pkgs.mkShell {
@@ -34,8 +63,11 @@
             self.packages.${system}.nodejs
             self.packages.${system}.floco
           ];
+          shellHook = ''
+            PATH=$PWD/node_modules/.bin:$PATH
+            ln -sf ${self.packages.${system}.toplevel.trees.dev}/node_modules $PWD/
+          '';
         };
       });
-
     };
 }
