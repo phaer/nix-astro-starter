@@ -20,11 +20,21 @@
         "x86_64-linux"
       ];
 
-      packages = eachSystem ({ self, pkgs, system }: {
-
+      packages = eachSystem ({ self, pkgs, system }: let
+        nodejs = pkgs.nodejs_20;
+        floco = inputs.floco.packages.${system}.floco.override {
+          npm = self.packages.${system}.nodejs.pkgs.npm;
+        };
+      in {
+        inherit floco nodejs;
       });
       devShells = eachSystem ({ self, pkgs, system }: {
-
+        default = pkgs.mkShell {
+          buildInputs = [
+            self.packages.${system}.nodejs
+            self.packages.${system}.floco
+          ];
+        };
       });
 
     };
